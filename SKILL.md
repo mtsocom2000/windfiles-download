@@ -10,11 +10,13 @@ Windfiles 云盘自动下载工具。
 ## 功能
 
 - 解析分享页面，提取下载链接
-- **检测冷却时间限制（10分钟内不能重复下载）**
-- 自动等待倒计时（60-90秒）
+- **检测冷却时间限制（10 分钟内不能重复下载）**
+- 自动等待倒计时（60-90 秒）
 - 支持免费慢速下载和 VIP 快速下载
 - 自动保存到指定目录
 - **详细的错误报告**
+- **默认使用 agent-browser 模式（提高下载成功率）**
+- **支持重定向 URL 解析（如 javlibrary redirect.php）**
 
 ## 使用方法
 
@@ -23,6 +25,14 @@ Windfiles 云盘自动下载工具。
 ```bash
 python3 {baseDir}/scripts/windfiles_download.py "https://windfiles.com/share/xxxxxx"
 ```
+
+### 从重定向链接下载（如 javlibrary）
+
+```bash
+python3 {baseDir}/scripts/windfiles_download.py "https://www.javlibrary.com/cn/redirect.php?url=https%3A%2F%2Fwindfiles.com%2Fshare%2Fxxxxxx"
+```
+
+脚本会自动从 `url` 参数中提取 windfiles 真实链接。
 
 ### 指定输出目录
 
@@ -36,12 +46,12 @@ python3 {baseDir}/scripts/windfiles_download.py "https://windfiles.com/share/xxx
 python3 {baseDir}/scripts/windfiles_download.py "https://windfiles.com/share/xxxxxx" --skip-wait
 ```
 
-### 使用浏览器模式
+### 禁用浏览器模式
 
-当直接下载失败时，使用 agent-browser 进行交互式下载：
+默认启用 agent-browser 模式。如需使用传统下载方式（不推荐，可能失败）：
 
 ```bash
-python3 {baseDir}/scripts/windfiles_download.py "https://windfiles.com/share/xxxxxx" --use-browser
+python3 {baseDir}/scripts/windfiles_download.py "https://windfiles.com/share/xxxxxx" --manual-browser
 ```
 
 ### 使用代理
@@ -54,29 +64,30 @@ python3 {baseDir}/scripts/windfiles_download.py "https://windfiles.com/share/xxx
 
 | 参数 | 说明 |
 |------|------|
-| `url` | Windfiles 分享链接（必填） |
+| `url` | Windfiles 分享链接或重定向链接（必填） |
 | `--output-dir, -o` | 输出目录，默认 `~/Downloads` |
 | `--skip-wait` | 跳过倒计时等待 |
-| `--use-browser` | 使用 agent-browser 进行下载 |
+| `--manual-browser` | 禁用 browser 模式（默认启用） |
 | `--proxy` | 使用代理服务器 |
 
 ## 工作流程
 
-1. **解析分享页面** — 提取文件名、文件大小、下载链接
-2. **检测冷却时间** — 检查是否有“10分钟内不能下载”提示
-3. **获取免费下载链接** — 从页面源码提取 `/download/slow/?dl=...`
-4. **等待倒计时** — 免费下载需要等待 60-90 秒
-5. **访问下载页面** — 获取实际的下载按钮
-6. **再次检测冷却时间** — 点击下载后检查是否有限制提示
-7. **下载文件** — 保存到指定目录
+1. **解析 URL** — 从重定向链接中提取 windfiles 真实地址
+2. **解析分享页面** — 提取文件名、文件大小、下载链接
+3. **检测冷却时间** — 检查是否有"10 分钟内不能下载"提示
+4. **获取免费下载链接** — 从页面源码提取 `/download/slow/?dl=...`
+5. **等待倒计时** — 免费下载需要等待 60-90 秒
+6. **访问下载页面** — 获取实际的下载按钮
+7. **再次检测冷却时间** — 点击下载后检查是否有限制提示
+8. **下载文件** — 保存到指定目录
 
 ## 错误处理
 
 | 错误类型 | 说明 | 解决方案 |
 |----------|------|----------|
-| `COOLDOWN_ACTIVE` | 10分钟冷却时间内 | 等待冷却结束或使用代理 |
+| `COOLDOWN_ACTIVE` | 10 分钟冷却时间内 | 等待冷却结束或使用代理 |
 | `DAILY_LIMIT` | 每日下载次数用尽 | 等到明天或更换 IP |
-| `DOWNLOAD_FAILED` | 下载失败 | 使用 `--use-browser` 模式 |
+| `DOWNLOAD_FAILED` | 下载失败 | 使用 browser 模式（默认已启用） |
 | `LINK_NOT_FOUND` | 找不到下载链接 | 检查链接是否有效 |
 
 ## 注意事项
@@ -84,10 +95,11 @@ python3 {baseDir}/scripts/windfiles_download.py "https://windfiles.com/share/xxx
 - 免费用户每天只能下载 2 个文件
 - 免费下载速度限制为 50 KB/s
 - 下载需要等待 60-90 秒倒计时
-- **10分钟冷却时间**：下载完成后 10 分钟内不能再次下载
+- **10 分钟冷却时间**：下载完成后 10 分钟内不能再次下载
 - 如果遇到冷却时间限制，可以使用 `--proxy` 参数切换 IP
+- **默认使用 agent-browser 模式**，提高下载成功率
 
 ## 依赖
 
 - Python 3.x
-- `agent-browser`（可选，用于 `--use-browser` 模式）
+- `agent-browser`（默认使用）

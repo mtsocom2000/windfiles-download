@@ -6,9 +6,10 @@ Windfiles Cloud Drive 下载脚本
 1. 解析分享页面，提取下载链接
 2. 自动等待倒计时（可选跳过）
 3. 下载文件到指定目录
+4. 支持重定向 URL 解析（如 javlibrary redirect.php）
 
 用法：
-    python3 windfiles_download.py <share_url> [--output-dir <dir>] [--skip-wait]
+    python3 windfiles_download.py <share_url> [--output-dir <dir>] [--skip-wait] [--manual-browser]
 """
 
 import argparse
@@ -20,6 +21,67 @@ import urllib.request
 import urllib.error
 import ssl
 from html.parser import HTMLParser
+from urllib.parse import parse_qs, urlparse
+
+
+def extract_windfiles_url(url):
+    """从重定向 URL 中提取 windfiles 真实链接
+    
+    支持格式：
+    - https://www.javlibrary.com/cn/redirect.php?url=https%3A%2F%2Fwindfiles.com%2Fshare%2Fxxx
+    - 其他包含 url 参数的重定向链接
+    """
+    parsed = urlparse(url)
+    
+    # 如果是直接的 windfiles 链接，直接返回
+    if 'windfiles.com' in parsed.netloc or 'windfiles.com' in url:
+        match = re.search(r'https://windfiles\.com/share/[a-zA-Z0-9]+', url)
+        if match:
+            return match.group(0)
+        return url
+    
+    # 尝试从 url 参数中提取
+    params = parse_qs(parsed.query)
+    if 'url' in params:
+        redirect_url = params['url'][0]
+        # URL 解码后可能还是编码的，需要再次解码
+        import urllib.parse
+        try:
+            redirect_url = urllib.parse.unquote(redirect_url)
+        except:
+            pass
+        
+        # 检查是否是 windfiles 链接
+        if 'windfiles.com' in redirect_url:
+            match = re.search(r'https://windfiles\.com/share/[a-zA-Z0-9]+', redirect_url)
+            if match:
+                print(f"从重定向 URL 中提取：{match.group(0)}")
+                return match.group(0)
+    
+    # 如果没有找到，返回原 URL（让后续逻辑处理）
+    return url
+
+
+def fetch_page(url, timeout=30):
+    """获取页面内容"""
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    
+    request = urllib.request.Request(
+        url,
+        headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        }
+    )
+    
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=ssl_context) as response:
+            return response.read().decode('utf-8')
+    except urllib.error.URLError as e:
+        print(f"错误：无法访问页面 - {e}")
+        return None
 
 
 class DownloadLinkParser(HTMLParser):
@@ -58,28 +120,6 @@ class DownloadLinkParser(HTMLParser):
         match = re.search(r'const counterTime\s*=\s*(\d+)', data)
         if match:
             self.countdown_seconds = int(match.group(1))
-
-
-def fetch_page(url, timeout=30):
-    """获取页面内容"""
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-    
-    request = urllib.request.Request(
-        url,
-        headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        }
-    )
-    
-    try:
-        with urllib.request.urlopen(request, timeout=timeout, context=ssl_context) as response:
-            return response.read().decode('utf-8')
-    except urllib.error.URLError as e:
-        print(f"错误：无法访问页面 - {e}")
-        return None
 
 
 def extract_download_info(html_content):
@@ -126,8 +166,8 @@ def download_file(url, output_dir, filename, timeout=60):
         }
     )
     
-    print(f"正在下载: {filename}")
-    print(f"保存到: {output_path}")
+    print(f"正在下载：{filename}")
+    print(f"保存到：{output_path}")
     
     try:
         with urllib.request.urlopen(request, timeout=timeout, context=ssl_context) as response:
@@ -140,10 +180,10 @@ def download_file(url, output_dir, filename, timeout=60):
             with open(output_path, 'wb') as f:
                 f.write(response.read())
             
-            print(f"下载完成: {output_path}")
+            print(f"下载完成：{output_path}")
             return output_path
     except Exception as e:
-        print(f"下载失败: {e}")
+        print(f"下载失败：{e}")
         return None
 
 
@@ -175,7 +215,7 @@ def download_with_agent_browser(share_url, output_dir):
     match = re.search(r'([A-Z0-9-]+\.torrent)', snapshot_content)
     if match:
         filename = match.group(1)
-        print(f"文件名: {filename}")
+        print(f"文件名：{filename}")
     
     # 4. 使用 curl 直接从分享页面提取下载链接
     # 因为 agent-browser 的 get text 不包含 JavaScript 生成的内容
@@ -190,7 +230,7 @@ def download_with_agent_browser(share_url, output_dir):
         match = re.search(r'link "Free Slow Download" \[ref=(e\d+)\]', snapshot_content)
         if match:
             free_btn_ref = match.group(1)
-            print(f"点击免费下载按钮: {free_btn_ref}")
+            print(f"点击免费下载按钮：{free_btn_ref}")
             subprocess.run(['agent-browser', 'click', free_btn_ref], check=True)
             time.sleep(2)
             
@@ -206,7 +246,7 @@ def download_with_agent_browser(share_url, output_dir):
         if not download_link.startswith('http'):
             download_link = 'https://windfiles.com' + download_link
         
-        print(f"下载链接: {download_link}")
+        print(f"下载链接：{download_link}")
         
         # 6. 访问下载页面
         subprocess.run(['agent-browser', 'open', download_link], check=True)
@@ -220,7 +260,7 @@ def download_with_agent_browser(share_url, output_dir):
         match = re.search(r'button "Start Download Now" \[ref=(e\d+)\]', result.stdout)
         if match:
             button_ref = match.group(1)
-            print(f"点击下载按钮: {button_ref}")
+            print(f"点击下载按钮：{button_ref}")
             subprocess.run(['agent-browser', 'click', button_ref], check=True)
             time.sleep(3)
         else:
@@ -235,9 +275,9 @@ def download_with_agent_browser(share_url, output_dir):
                 filepath = os.path.join(downloads_dir, f)
                 # 复制到输出目录
                 os.makedirs(output_dir, exist_ok=True)
-                dest = os.path.join(output_dir, f)
+                dest = os.path.join(output_dir, filename)
                 shutil.copy(filepath, dest)
-                print(f"文件已保存到: {dest}")
+                print(f"文件已保存到：{dest}")
                 return dest
     
     print("下载可能已开始，检查浏览器的默认下载目录")
@@ -250,24 +290,27 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-    # 基本用法
+    # 基本用法（默认使用 browser 模式）
     python3 windfiles_download.py "https://windfiles.com/share/abc123"
 
     # 指定输出目录
     python3 windfiles_download.py "https://windfiles.com/share/abc123" --output-dir ./downloads
 
-    # 使用 agent-browser（适用于需要交互的情况）
-    python3 windfiles_download.py "https://windfiles.com/share/abc123" --use-browser
+    # 从 javlibrary 重定向链接下载
+    python3 windfiles_download.py "https://www.javlibrary.com/cn/redirect.php?url=https%3A%2F%2Fwindfiles.com%2Fshare%2Fabc123"
+
+    # 禁用 browser 模式（使用传统下载方式）
+    python3 windfiles_download.py "https://windfiles.com/share/abc123" --manual-browser
 """
     )
     
     parser.add_argument('url', help='Windfiles 分享链接')
     parser.add_argument('--output-dir', '-o', default='~/Downloads/windfiles',
-                       help='输出目录 (默认: ~/Downloads/windfiles)')
+                       help='输出目录 (默认：~/Downloads/windfiles)')
     parser.add_argument('--skip-wait', action='store_true',
                        help='跳过倒计时等待（直接访问下载页面）')
-    parser.add_argument('--use-browser', action='store_true',
-                       help='使用 agent-browser 进行下载')
+    parser.add_argument('--manual-browser', action='store_true',
+                       help='手动禁用 browser 模式（默认启用 browser 模式）')
     
     args = parser.parse_args()
     
@@ -275,29 +318,35 @@ def main():
     import os
     output_dir = os.path.expanduser(args.output_dir)
     
-    print(f"分享链接: {args.url}")
+    # 提取真实的 windfiles 链接（处理重定向 URL）
+    windfiles_url = extract_windfiles_url(args.url)
+    print(f"原始链接：{args.url}")
+    print(f"Windfiles URL: {windfiles_url}")
     
-    if args.use_browser:
-        result = download_with_agent_browser(args.url, output_dir)
+    # 默认使用 browser 模式，除非显式禁用
+    use_browser = not args.manual_browser
+    
+    if use_browser:
+        result = download_with_agent_browser(windfiles_url, output_dir)
     else:
         # 获取分享页面
         print("正在获取页面信息...")
-        html_content = fetch_page(args.url)
+        html_content = fetch_page(windfiles_url)
         
         if not html_content:
             print("获取页面失败，尝试使用 agent-browser...")
-            result = download_with_agent_browser(args.url, output_dir)
+            result = download_with_agent_browser(windfiles_url, output_dir)
             sys.exit(0 if result else 1)
         
         # 解析下载信息
         info = extract_download_info(html_content)
         
-        print(f"文件名: {info.filename or '未知'}")
-        print(f"倒计时: {info.countdown_seconds} 秒")
+        print(f"文件名：{info.filename or '未知'}")
+        print(f"倒计时：{info.countdown_seconds} 秒")
         
         if info.slow_download_link:
             download_url = 'https://windfiles.com' + info.slow_download_link
-            print(f"下载链接: {download_url}")
+            print(f"下载链接：{download_url}")
             
             if not args.skip_wait:
                 print(f"\n等待 {info.countdown_seconds} 秒（可使用 --skip-wait 跳过）...")
@@ -307,7 +356,7 @@ def main():
                                   info.filename or 'download.torrent')
         else:
             print("未找到免费下载链接，尝试使用 agent-browser...")
-            result = download_with_agent_browser(args.url, output_dir)
+            result = download_with_agent_browser(windfiles_url, output_dir)
     
     sys.exit(0 if result else 1)
 
