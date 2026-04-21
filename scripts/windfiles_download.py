@@ -31,13 +31,17 @@ def extract_windfiles_url(url):
     - https://www.javlibrary.com/cn/redirect.php?url=https%3A%2F%2Fwindfiles.com%2Fshare%2Fxxx
     - 其他包含 url 参数的重定向链接
     """
+    # 首先尝试直接从整个 URL 字符串中提取 windfiles 链接（最可靠）
+    match = re.search(r'https://windfiles\.com/share/[a-zA-Z0-9]+', url)
+    if match:
+        result = match.group(0)
+        print(f"从重定向 URL 中提取：{result}")
+        return result
+    
     parsed = urlparse(url)
     
     # 如果是直接的 windfiles 链接，直接返回
-    if 'windfiles.com' in parsed.netloc or 'windfiles.com' in url:
-        match = re.search(r'https://windfiles\.com/share/[a-zA-Z0-9]+', url)
-        if match:
-            return match.group(0)
+    if 'windfiles.com' in parsed.netloc:
         return url
     
     # 尝试从 url 参数中提取
@@ -221,8 +225,8 @@ def download_with_agent_browser(share_url, output_dir):
     # 因为 agent-browser 的 get text 不包含 JavaScript 生成的内容
     html_content = fetch_page(share_url)
     
-    # 5. 提取下载链接
-    match = re.search(r'/download/slow/\?dl=[^"\'>\s]+', html_content)
+    # 5. 提取下载链接（如果 fetch_page 失败，html_content 为 None）
+    match = re.search(r'/download/slow/\?dl=[^"\'>\s]+', html_content) if html_content else None
     if not match:
         print("错误：无法找到下载链接，尝试点击免费下载按钮...")
         
