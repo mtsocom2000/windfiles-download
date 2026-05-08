@@ -196,6 +196,7 @@ def download_with_agent_browser(share_url, output_dir):
     
     import os
     import shutil
+    from pathlib import Path
     
     # 检查 agent-browser 是否可用
     result = subprocess.run(['which', 'agent-browser'], capture_output=True)
@@ -215,14 +216,13 @@ def download_with_agent_browser(share_url, output_dir):
     snapshot_content = result.stdout
     
     # 3. 从快照提取文件名
-    filename = 'download.torrent'
+    share_filename = 'download.torrent'
     match = re.search(r'([A-Z0-9-]+\.torrent)', snapshot_content)
     if match:
-        filename = match.group(1)
-        print(f"文件名：{filename}")
+        share_filename = match.group(1)
+        print(f"文件名：{share_filename}")
     
     # 4. 使用 curl 直接从分享页面提取下载链接
-    # 因为 agent-browser 的 get text 不包含 JavaScript 生成的内容
     html_content = fetch_page(share_url)
     
     # 5. 提取下载链接（如果 fetch_page 失败，html_content 为 None）
@@ -230,19 +230,13 @@ def download_with_agent_browser(share_url, output_dir):
     if not match:
         print("错误：无法找到下载链接，尝试点击免费下载按钮...")
         
-        # 尝试从快照找免费下载按钮
         match = re.search(r'link "Free Slow Download" \[ref=(e\d+)\]', snapshot_content)
         if match:
             free_btn_ref = match.group(1)
             print(f"点击免费下载按钮：{free_btn_ref}")
             subprocess.run(['agent-browser', 'click', free_btn_ref], check=True)
-            time.sleep(2)
-            
-            # 等待倒计时
-            print("等待 95 秒倒计时...")
             time.sleep(95)
             
-            # 再次获取快照
             result = subprocess.run(['agent-browser', 'snapshot', '-i'], 
                                   capture_output=True, text=True)
     else:
@@ -260,31 +254,75 @@ def download_with_agent_browser(share_url, output_dir):
         result = subprocess.run(['agent-browser', 'snapshot', '-i', '-C'],
                               capture_output=True, text=True)
         
-        # 8. 查找下载按钮
+        # 8. 查找并点击下载按钮
         match = re.search(r'button "Start Download Now" \[ref=(e\d+)\]', result.stdout)
         if match:
             button_ref = match.group(1)
             print(f"点击下载按钮：{button_ref}")
             subprocess.run(['agent-browser', 'click', button_ref], check=True)
-            time.sleep(3)
         else:
             print("未找到下载按钮，尝试其他方式...")
     
-    # 9. 检查下载目录
+    # --- 修复：正确找回下载的文件 ---
     downloads_dir = os.path.expanduser('~/Downloads')
+    os.makedirs(output_dir, exist_ok=True)
     
-    if os.path.exists(downloads_dir):
+    # 9a. 点击后等待文件下载完成（轮询最多 30 秒）
+    downloaded_file = None
+    for wait_sec in range(30):
+        time.sleep(1)
+        
+        if not os.path.exists(downloads_dir):
+            continue
+        
         for f in os.listdir(downloads_dir):
             if f.endswith('.torrent'):
-                filepath = os.path.join(downloads_dir, f)
-                # 复制到输出目录
-                os.makedirs(output_dir, exist_ok=True)
-                dest = os.path.join(output_dir, filename)
-                shutil.copy(filepath, dest)
-                print(f"文件已保存到：{dest}")
-                return dest
+                fp = os.path.join(downloads_dir, f)
+                try:
+                    # agent-browser 下载时文件名可能带 .crdownload 后缀，等它变完整
+                    if f.endswith('.crdownload'):
+                        continue
+                    mtime = os.path.getmtime(fp)
+                    # 只看最近 60 秒内修改过的文件（避免捡到旧的）
+                    if time.time() - mtime < 60:
+                        downloaded_file = fp
+                        break
+                except OSError:
+                    continue
+        if downloaded_file:
+            break
     
-    print("下载可能已开始，检查浏览器的默认下载目录")
+    # 9b. 如果按时间筛选没找到，fallback：看文件名是否匹配分享页的预期文件名
+    if not downloaded_file and os.path.exists(downloads_dir):
+        for f in os.listdir(downloads_dir):
+            if f == share_filename:
+                fp = os.path.join(downloads_dir, f)
+                if os.path.isfile(fp):
+                    downloaded_file = fp
+                    break
+    
+    # 9c. 如果上述都不行，再 fallback 到最近修改的 torrent 文件
+    if not downloaded_file and os.path.exists(downloads_dir):
+        candidates = []
+        for f in os.listdir(downloads_dir):
+            if f.endswith('.torrent'):
+                fp = os.path.join(downloads_dir, f)
+                if os.path.isfile(fp):
+                    candidates.append((os.path.getmtime(fp), fp))
+        if candidates:
+            candidates.sort(reverse=True)
+            downloaded_file = candidates[0][1]
+    
+    # 10. 复制到目标目录
+    if downloaded_file:
+        os.makedirs(output_dir, exist_ok=True)
+        dest = os.path.join(output_dir, share_filename)
+        shutil.copy2(downloaded_file, dest)
+        actual_size = os.path.getsize(dest)
+        print(f"文件已保存到：{dest}（{actual_size / 1024:.1f} KB）")
+        return dest
+    
+    print("⚠️ 下载可能已开始，但未在 ~/Downloads 找到刚下载的文件，请手动检查浏览器默认下载目录")
     return None
 
 
