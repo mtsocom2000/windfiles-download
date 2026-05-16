@@ -250,24 +250,46 @@ def download_with_agent_browser(share_url, output_dir):
         subprocess.run(['agent-browser', 'open', download_link], check=True)
         time.sleep(2)
         
-        # 7. 获取下载按钮
+        # 7. 获取下载页面快照
         result = subprocess.run(['agent-browser', 'snapshot', '-i', '-C'],
                               capture_output=True, text=True)
+        snapshot_text = result.stdout
+        
+        # 7a. 检查页面是否有冷却/错误提示
+        cooldown_patterns = [
+            r'(?i)wait.*10.*min', r'(?i)cool.?down', r'(?i)cooldown',
+            r'(?i)please wait', r'(?i)try again later',
+            r'(?i)you can only download', r'(?i)limit', r'(?i)daily.*limit',
+            r'(?i)already downloaded', r'(?i)10.*分钟内', r'(?i)冷却',
+            r'(?i)请等待', r'(?i)请稍后', r'(?i)限制', r'(?i)已达到',
+        ]
+        for pat in cooldown_patterns:
+            if re.search(pat, snapshot_text):
+                print(f"❌ 检测到下载限制：页面包含冷却/限制提示")
+                # 截取相关上下文
+                match = re.search(r'.{0,40}' + pat + r'.{0,80}', snapshot_text, re.IGNORECASE)
+                if match:
+                    print(f"   提示内容：{match.group(0).strip()}")
+                print("   10 分钟冷却期内无法下载，请稍后再试或使用 --proxy 切换 IP")
+                return None
         
         # 8. 查找并点击下载按钮
-        match = re.search(r'button "Start Download Now" \[ref=(e\d+)\]', result.stdout)
+        match = re.search(r'button "Start Download Now" \[ref=(e\d+)\]', snapshot_text)
         if match:
             button_ref = match.group(1)
             print(f"点击下载按钮：{button_ref}")
             subprocess.run(['agent-browser', 'click', button_ref], check=True)
         else:
-            print("未找到下载按钮，尝试其他方式...")
+            # 没有按钮也没有冷却提示 — 输出部分页面内容帮助调试
+            preview = snapshot_text[:300]
+            print(f"❌ 未找到下载按钮，页面内容：{preview}")
+            return None
     
     # --- 修复：正确找回下载的文件 ---
     downloads_dir = os.path.expanduser('~/Downloads')
     os.makedirs(output_dir, exist_ok=True)
     
-    # 9a. 点击后等待文件下载完成（轮询最多 30 秒）
+    # 9. 轮询等待文件下载完成（最多 30 秒）
     downloaded_file = None
     for wait_sec in range(30):
         time.sleep(1)
@@ -279,11 +301,10 @@ def download_with_agent_browser(share_url, output_dir):
             if f.endswith('.torrent'):
                 fp = os.path.join(downloads_dir, f)
                 try:
-                    # agent-browser 下载时文件名可能带 .crdownload 后缀，等它变完整
                     if f.endswith('.crdownload'):
                         continue
+                    # 只看最近 60 秒内修改的文件（排除旧文件）
                     mtime = os.path.getmtime(fp)
-                    # 只看最近 60 秒内修改过的文件（避免捡到旧的）
                     if time.time() - mtime < 60:
                         downloaded_file = fp
                         break
@@ -292,26 +313,16 @@ def download_with_agent_browser(share_url, output_dir):
         if downloaded_file:
             break
     
-    # 9b. 如果按时间筛选没找到，fallback：看文件名是否匹配分享页的预期文件名
+    # 如果按时间没找到，但文件名完全匹配分享页预期文件名，也接受
     if not downloaded_file and os.path.exists(downloads_dir):
         for f in os.listdir(downloads_dir):
             if f == share_filename:
                 fp = os.path.join(downloads_dir, f)
                 if os.path.isfile(fp):
-                    downloaded_file = fp
-                    break
-    
-    # 9c. 如果上述都不行，再 fallback 到最近修改的 torrent 文件
-    if not downloaded_file and os.path.exists(downloads_dir):
-        candidates = []
-        for f in os.listdir(downloads_dir):
-            if f.endswith('.torrent'):
-                fp = os.path.join(downloads_dir, f)
-                if os.path.isfile(fp):
-                    candidates.append((os.path.getmtime(fp), fp))
-        if candidates:
-            candidates.sort(reverse=True)
-            downloaded_file = candidates[0][1]
+                    mtime = os.path.getmtime(fp)
+                    if time.time() - mtime < 300:  # 放宽到 5 分钟
+                        downloaded_file = fp
+                        break
     
     # 10. 复制到目标目录
     if downloaded_file:
@@ -322,7 +333,7 @@ def download_with_agent_browser(share_url, output_dir):
         print(f"文件已保存到：{dest}（{actual_size / 1024:.1f} KB）")
         return dest
     
-    print("⚠️ 下载可能已开始，但未在 ~/Downloads 找到刚下载的文件，请手动检查浏览器默认下载目录")
+    print("❌ 下载失败：未在 ~/Downloads 中找到新下载的 torrent 文件")
     return None
 
 
