@@ -257,19 +257,20 @@ def download_with_agent_browser(share_url, output_dir):
         
         # 7a. 检查页面是否有冷却/错误提示
         cooldown_patterns = [
-            r'(?i)wait.*10.*min', r'(?i)cool.?down', r'(?i)cooldown',
-            r'(?i)please wait', r'(?i)try again later',
-            r'(?i)you can only download', r'(?i)limit', r'(?i)daily.*limit',
-            r'(?i)already downloaded', r'(?i)10.*分钟内', r'(?i)冷却',
-            r'(?i)请等待', r'(?i)请稍后', r'(?i)限制', r'(?i)已达到',
+            r'wait.*10.*min', r'cool.?down', r'cooldown',
+            r'please wait', r'try again later',
+            r'you can only download', r'daily.*limit',
+            r'already downloaded', r'10.*分钟内', r'冷却',
+            r'请等待', r'请稍后', r'限制', r'已达到',
         ]
         for pat in cooldown_patterns:
-            if re.search(pat, snapshot_text):
+            if re.search(pat, snapshot_text, re.IGNORECASE):
                 print(f"❌ 检测到下载限制：页面包含冷却/限制提示")
                 # 截取相关上下文
-                match = re.search(r'.{0,40}' + pat + r'.{0,80}', snapshot_text, re.IGNORECASE)
-                if match:
-                    print(f"   提示内容：{match.group(0).strip()}")
+                context_pat = r'.{0,40}' + pat + r'.{0,80}'
+                cmatch = re.search(context_pat, snapshot_text, re.IGNORECASE)
+                if cmatch:
+                    print(f"   提示内容：{cmatch.group(0).strip()}")
                 print("   10 分钟冷却期内无法下载，请稍后再试或使用 --proxy 切换 IP")
                 return None
         
