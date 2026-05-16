@@ -280,6 +280,27 @@ def download_with_agent_browser(share_url, output_dir):
             button_ref = match.group(1)
             print(f"点击下载按钮：{button_ref}")
             subprocess.run(['agent-browser', 'click', button_ref], check=True)
+            time.sleep(2)
+            
+            # 8a. 点击后检查是否跳转到限制提示页
+            result = subprocess.run(['agent-browser', 'snapshot', '-i', '-C'],
+                                  capture_output=True, text=True)
+            post_click_text = result.stdout
+            limit_patterns = [
+                r'You have downloaded \d+ files in the last 24 hours',
+                r'Please upgrade to VIP or try again tomorrow',
+                r'每日下载', r'下载次数', r'超过.*限制', r'升级.*VIP',
+                r'Daily download limit', r'limit reached',
+                r'you have reached.*limit', r'try again tomorrow',
+            ]
+            for pat in limit_patterns:
+                if re.search(pat, post_click_text, re.IGNORECASE):
+                    print(f"❌ 检测到每日下载限制")
+                    cmatch = re.search(r'.{0,40}' + pat + r'.{0,80}', post_click_text, re.IGNORECASE)
+                    if cmatch:
+                        print(f"   提示内容：{cmatch.group(0).strip()}")
+                    print("   未登录账号每日限制 2 次下载，请升级 VIP 或明天再试")
+                    return None
         else:
             # 没有按钮也没有冷却提示 — 输出部分页面内容帮助调试
             preview = snapshot_text[:300]
