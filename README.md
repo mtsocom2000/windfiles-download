@@ -29,17 +29,31 @@ cd windfiles-download
 
 ## 快速使用
 
-### 基本下载
+### 模式选择
+
+| 环境 | 推荐模式 | 命令 |
+|------|----------|------|
+| **VPS / 无桌面** | `--manual-browser` | 加此参数，纯 Python 下载 |
+| **本地桌面 (有 Chrome)** | 默认 (agent-browser) | 不加参数，Chrome 自动化 |
+
+### VPS 推荐用法（manual-browser + 代理）
 
 ```bash
-# 默认 agent-browser 模式
+python3 scripts/windfiles_download.py "https://www.javlibrary.com/cn/redirect.php?url=..." \
+  --manual-browser --skip-wait --proxy-rapid "YOUR_USER:YOUR_PASS"
+```
+
+### 桌面环境：默认用法（agent-browser）
+
+```bash
 python3 scripts/windfiles_download.py "https://windfiles.com/share/xxxxxx"
 ```
 
 ### 从重定向链接下载（如 javlibrary）
 
 ```bash
-python3 scripts/windfiles_download.py "https://www.javlibrary.com/cn/redirect.php?url=https%3A%2F%2Fwindfiles.com%2Fshare%2Fxxxxxx"
+python3 scripts/windfiles_download.py "https://www.javlibrary.com/cn/redirect.php?url=..." \
+  --manual-browser --proxy-rapid "YOUR_USER:YOUR_PASS" --skip-wait
 ```
 
 ### 跳过倒计时
@@ -141,11 +155,13 @@ done
 | `url` | Windfiles 分享链接或重定向链接（必填） |
 | `--output-dir, -o` | 输出目录，默认 `~/Downloads` |
 | `--skip-wait` | 跳过倒计时等待 |
-| `--manual-browser` | 禁用 browser 模式，纯 urllib 下载 |
+| `--manual-browser` | **VPS 推荐**。禁用 agent-browser，纯 Python urllib 下载 |
 | `--proxy` | HTTP 代理地址，如 `http://user:pass@host:port` |
 | `--proxy-rapid` | RapidProxy 快速配置，格式 `用户名:密码`，自动旋转 session |
 | `--show-ip` | 下载前显示当前出口 IP |
 
+> **VPS 推荐组合**：`--manual-browser --proxy-rapid "YOUR_USER:YOUR_PASS" --skip-wait`
+>
 > `--proxy` 和 `--proxy-rapid` 互斥，同时指定时 `--proxy-rapid` 优先。
 
 ## 下载流程（manual-browser 模式）
@@ -181,6 +197,24 @@ done
 - **2 次/24h 限制**：IP 级别。同一 IP 每天最多 2 次免费下载。
   **住宅代理切换 IP 即可绕过。**
 - 两个限制均可在单个 session 内通过 `--proxy-rapid` 自动旋转 IP 完全绕过。
+
+## VPS 批量下载脚本示例
+
+```bash
+#!/bin/bash
+# windfiles 批量下载（VPS 环境）
+RAPID_CRED="YOUR_USERNAME:YOUR_PASSWORD"
+
+URLS=(
+  "https://windfiles.com/share/xxxxxx"
+  "https://windfiles.com/share/yyyyyy"
+)
+
+for url in "${URLS[@]}"; do
+  python3 scripts/windfiles_download.py "$url" \
+    --manual-browser --proxy-rapid "$RAPID_CRED" --skip-wait
+done
+```
 
 ## 依赖
 
