@@ -11,7 +11,7 @@ Windfiles Cloud Drive 下载脚本 - 支持代理功能
 用法：
     python3 windfiles_download.py <share_url> [--output-dir <dir>] [--skip-wait] [--manual-browser]
     python3 windfiles_download.py <share_url> --proxy "http://user:pass@host:port"
-    python3 windfiles_download.py <share_url> --proxy-rapid "user:pass"  # 自动生成旋转 session
+    python3 windfiles_download.py <share_url> --proxy "http://user:pass@host:port"
 """
 
 import argparse
@@ -63,20 +63,6 @@ def setup_global_proxy(proxy_url):
     urllib.request.install_opener(opener)
 
 
-def parse_rapid_proxy(raw):
-    """解析 RapidProxy 格式 'user:pass' 并生成带随机 session 的完整 URL
-    
-    RapidProxy 格式：
-      http://<user>-residential-AS-session-<随机值>-stime-3:<pass>@us.rapidproxy.io:5001
-    
-    每次调用使用不同 session 值 → 获得不同出口 IP
-    """
-    import random
-    if ':' not in raw:
-        raise ValueError("RapidProxy 格式应为 'user:pass'")
-    user, pwd = raw.split(':', 1)
-    session_id = random.randint(10000000, 99999999)
-    return f"http://{user}-residential-AS-session-{session_id}-stime-3:{pwd}@us.rapidproxy.io:5001"
 
 
 # ──────────────────────────────────────
@@ -358,7 +344,7 @@ def download_slow_via_post(dl_param, output_dir, filename_hint, timeout=120):
         for pat in limit_patterns:
             if re.search(pat, body, re.IGNORECASE):
                 print("\n🔒 检测到每日下载限制（2 次/24h）")
-                print("   使用 --proxy 或 --proxy-rapid 切换 IP 即可绕过")
+                print("   使用 --proxy 切换 IP 即可绕过")
                 break
         return None
     except Exception as e:
@@ -567,9 +553,9 @@ def main():
     # 使用 Bright Data 住宅代理（固定 IP）
     python3 windfiles_download.py "https://windfiles.com/share/abc123" --proxy "http://brd-customer-h_xxx-zone-xxx:pass@brd.superproxy.io:33335"
 
-    # 使用 RapidProxy 住宅代理（自动旋转 IP，绕过 2次/24h 限制）
-    python3 windfiles_download.py "https://windfiles.com/share/abc123" --proxy-rapid "mytest1:Mytestonly1"
-    # 每次运行使用不同 session ID → 不同出口 IP → 不触发每日限制
+    # 使用 RapidProxy 住宅代理（用户自行构造 session ID）
+    python3 windfiles_download.py "https://windfiles.com/share/abc123" --proxy "http://user-residential-AS-session-12345678-stime-3:pass@us.rapidproxy.io:5001"
+    # 每次用不同 session ID → 不同出口 IP → 不触发每日限制
 
     # 从 javlibrary 重定向链接下载
     python3 windfiles_download.py "https://www.javlibrary.com/cn/redirect.php?url=https%3A%2F%2Fwindfiles.com%2Fshare%2Fabc123"
@@ -588,8 +574,6 @@ def main():
     proxy_group = parser.add_argument_group('代理选项（用于绕过 IP 级限制）')
     proxy_group.add_argument('--proxy',
                        help='HTTP 代理地址，如 http://user:pass@host:port')
-    proxy_group.add_argument('--proxy-rapid',
-                       help='RapidProxy 快速配置，格式 "user:pass"，自动生成旋转 session')
     proxy_group.add_argument('--show-ip', action='store_true',
                        help='下载前显示当前出口 IP（用于确认代理是否生效）')
     
@@ -597,9 +581,7 @@ def main():
     
     # 解析代理参数
     proxy_url = None
-    if args.proxy_rapid:
-        proxy_url = parse_rapid_proxy(args.proxy_rapid)
-    elif args.proxy:
+    if args.proxy:
         proxy_url = args.proxy
     
     # 安装全局代理
